@@ -1,0 +1,196 @@
+---
+title: "nobel_laureates_info"
+author: "Alexander R. Bogdan"
+date: "January 13, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE}
+# Load packages 
+library(dplyr)
+library(tidyr)
+library(rvest)
+```
+
+
+```{r}
+# Architecture for final loop: cycle through each type and then each year
+
+root_url = "https://www.nobelprize.org/nomination/archive/list.php" # Specify root URL
+test_sess = html_session(root_url) # Open new session using root url
+test_form = html_form(read_html(test_sess))[[5]] # Isolate nobel prize type & year selection box
+root_archive_url = "https://www.nobelprize.org/nomination/archive/"
+dat_all = NULL
+for (p in 1:5){
+  dat_type = NULL
+  for(k in 1901:1965){
+    filled_form = set_values(test_form, prize = p, year = k) # Input values for prize type and year of nomination
+    new_sess = submit_form(test_sess, filled_form) # Submit new input values to active session
+    new_dat = read_html(new_sess) # Abstract html from URL using new input values
+    # Extract URLs for "Show more >>" pages of each nominee for a given prize type and year  
+    url_list = new_dat %>%
+    html_nodes(".butt") %>% # Specify "Show more >>" css node
+    html_attr("href") # Extract URL from each node
+    # Loop through each "Show more >>" URL
+    nom_n = length(url_list)
+    dat_year = NULL
+    for (j in 1:nom_n){
+nom_url = read_html(paste(root_archive_url ,url_list[j], sep="")) # Append each href to root URL
+
+# Create dataset containing all data from webpage
+nom_info = nom_url %>%
+  html_nodes("td+ td , .rubr") %>%
+  html_text()
+
+# Create variables containing specific information from webpage dataset
+name_values = grep("Name:",nom_info)
+gender_values = grep("Gender:", nom_info)
+yob_values = grep("Year, Birth:", nom_info)
+yod_values = grep("Year, Death:", nom_info)
+univ_values = grep("University:", nom_info)
+city_values = grep("City:", nom_info)
+country_values = grep("Country:", nom_info)
+
+# Create empty matrix for nominee information
+x = matrix(NA,nrow=length(name_values)-1,ncol=10)
+nom_partial_id = paste0(p,k,j) # Concatenate award type, nomination year and number for unique identifier
+
+# Loop through each nominee identified on a given page
+for (i in 1:length(name_values)-1){
+  x[i,1] = paste0(nom_partial_id, i) # Concatenate specific nominee number to create unique identifier
+  x[i,2] = p
+  x[i,3] = k
+  x[i,4] = nom_info[name_values[i]+1] # Extract nominee name
+  x[i,5] = nom_info[gender_values[i]+1] # Extract nominee gender
+  x[i,6] = nom_info[yob_values[i]+1] # Extract nominee year of birth
+  # Logic statements for handling YOD
+  if (i == 1){
+    if (is.na(yod_values[1])){
+      x[i,7] = NA
+    } else if (yod_values[1] > name_values[2]){
+      x[i,7] = NA
+    } else {
+      x[i,7] = nom_info[yod_values[i]+1]
+    }
+  } else if (i>1 && i!=length(name_values)) {
+    if (is.na(x[i-1,7])){
+      x[i,7] = nom_info[yod_values[i-1]+1]
+    } else {            
+      if (is.na(yod_values[i])) {
+        x[i,7] = NA
+      } else if (yod_values[i] > name_values[i+1]){ 
+        x[i,7] = NA
+      } else {
+        x[i,7] = nom_info[yod_values[i]+1]
+      }
+    }
+  } else {
+    x[i,7] = nom_info[yod_values[i]+1]
+  }
+  # Logic statements for handling University
+  if (i == 1){
+    if (is.na(univ_values[1])){
+      x[i,8] = NA
+    } else if (univ_values[1] > name_values[2]){
+      x[i,8] = NA
+    } else {
+      x[i,8] = nom_info[univ_values[i]+1]
+    }
+  } else if (i>1 && i!=length(name_values)) {
+    if (is.na(x[i-1,8])){
+      x[i,8] = nom_info[univ_values[i-1]+1]
+    } else {             # Try inserting another if statement regarding NA status for university here; # of univ may be less than # names
+      if (is.na(univ_values[i])) {
+        x[i,8] = NA
+      } else if (univ_values[i] > name_values[i+1]){ # Source of error
+        x[i,8] = NA
+      } else {
+        x[i,8] = nom_info[univ_values[i]+1]
+      }
+    }
+  } else {
+    x[i,8] = nom_info[univ_values[i]+1]
+  }
+  # Logis statements for handling City
+  if (i == 1){
+    if (is.na(city_values[1])){
+      x[i,9] = NA
+    } else if (city_values[1] > name_values[2]){
+      x[i,9] = NA
+    } else {
+      x[i,9] = nom_info[city_values[i]+1]
+    }
+  } else if (i>1 && i!=length(name_values)) {
+    if (is.na(x[i-1,9])){
+      x[i,9] = nom_info[city_values[i-1]+1]
+    } else {            
+      if (is.na(city_values[i])) {
+        x[i,9] = NA
+      } else if (city_values[i] > name_values[i+1]){ 
+        x[i,9] = NA
+      } else {
+        x[i,9] = nom_info[city_values[i]+1]
+      }
+    }
+  } else {
+    x[i,9] = nom_info[city_values[i]+1]
+  }
+  # Logic statments for handling Country
+  if (i == 1){
+    if (is.na(country_values[1])){
+      x[i,10] = NA
+    } else if (country_values[1] > name_values[2]){
+      x[i,10] = NA
+    } else {
+      x[i,10] = nom_info[country_values[i]+1]
+    }
+  } else if (i>1 && i!=length(name_values)) {
+    if (is.na(x[i-1,10])){
+      x[i,10] = nom_info[country_values[i-1]+1]
+    } else {             
+      if (is.na(country_values[i])) {
+        x[i,10] = NA
+      } else if (country_values[i] > name_values[i+1]){ 
+        x[i,10] = NA
+      } else {
+        x[i,10] = nom_info[country_values[i]+1]
+      }
+    }
+  } else {
+    x[i,10] = nom_info[country_values[i]+1]
+  }
+}
+# Append webpage dataset to overall dataset for given year
+dat_year = rbind(dat_year, x)
+}
+dat_type = rbind(dat_type, dat_year)
+}
+# Concatenate responses for prize types
+dat_all = rbind(dat_all, dat_type)
+}
+
+# Convert data into data.frame and export data
+nobel_data = data.frame(dat_all)
+write.csv(nobel_data, "C:/Users/Alex/Desktop/nobel_data.csv")
+
+
+
+### Issue: Ranodm skip patterns with number of nominees exceeds 4 for a given nomination
+### Resolve: Create flag label and special dataset for nominations with 4+ nominees
+
+nomination_ind = lapply(seq(from=1, to=length(nobel_data$id), by=5), function(i) substr(nobel_data$id, i, i+4)) # Separate nomination number and number of nominees from unique ID
+nomination_ind[[3]] = sapply(strsplit(nomination_ind[[2]], ""), tail, 1) # Separate number of nominees from nomination number
+nomination_ind[[3]] = as.numeric(nomination_ind[[3]])
+nomination_ind[[4]] = ifelse(nomination_ind[[3]] > 3, "FLAG","CORRECT") # Apply logical flag for nominees >=4
+nobel_flagged_data = cbind(nobel_data,nomination_ind[[4]]) # Bind flag column to existing nobel dataset
+write.csv(nobel_flagged_data, "C:/Users/Alex/Desktop/nobel_flagged_data.csv") # Output data as .csv
+
+# Create dataset containing ONLY nominations in need of review
+flagged_nominations = filter(nobel_dat_flagged, Flagged=="FLAG") # Include only FLAGGED nominations
+write.csv(flagged_nominations, "C:/Users/Alex/Desktop/flagged_nominations.csv")
+
+
